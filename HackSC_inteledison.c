@@ -1,3 +1,8 @@
+#include <b64.h>
+#include <HttpClient.h>
+
+
+
 #include <Wire.h>
 #include <rgb_lcd.h>
 
@@ -34,18 +39,24 @@ int status = WL_IDLE_STATUS;
 // if you don't want to use DNS (and reduce your sketch size)
 // use the numeric IP instead of the name for the server:
 //IPAddress server(74,125,232,128);  // numeric IP for Google (no DNS)
-char to_server[] = "phpsetup.azurewebsites.net";    // name address for Google (using DNS)
+char to_server[] = "hgaquaponics.azurewebsites.net";    // name address for Google (using DNS)
+
+
+
+
+char from_server[] = "hgaquaponics.azurewebsites.net";    // name address for Google (using DNS)
 const int NUMDATA = 1;
 int data[NUMDATA];
 //*********needs to be defined
 unsigned char something_wrong = 0;
-  int feed_fish = 1;
+  int fishFed = 1;
 
 // Initialize the Ethernet client library
 // with the IP address and port of the server 
 // that you want to connect to (port 80 is default for HTTP):
 WiFiClient client;
-
+WiFiClient client2;
+  HttpClient http(client2);
 const int pinTemp = A0;      // pin of temperature sensor
 
 float temperature_cel, temperature_fer;
@@ -108,6 +119,23 @@ void setup() {
     pinMode(7, OUTPUT);  
     pinMode(5, INPUT);    
     pinMode(8, INPUT);
+    
+  /*if (client2.connect(from_server, 80))
+  {
+    // Make a HTTP request:
+    client2.print("GET ");
+    client2.print("/latest.txt");
+    client2.println(" HTTP/1.1");
+    client2.print("Host: ");
+    client2.println(from_server);
+      client2.println( "Content-Type: text/html" );
+      client2.println( "Connection: close" );
+
+    client2.println();
+    
+  }*/
+ 
+  
 }
 
 int lcdcnt = 0;
@@ -159,10 +187,10 @@ void displayErrorMsg(){
 int water_full = 1;
 
 void sendData(){
-    if(feed_fish && digitalRead(8))
-      feed_fish = 0;
+    if(!fishFed && digitalRead(8))
+      fishFed = 1;
       wrong_prev = something_wrong;
-    if(!water_full && feed_fish){
+    if(!water_full && !fishFed){
       //Serial.println("testing");
       something_wrong = 3;
     }
@@ -170,7 +198,7 @@ void sendData(){
       something_wrong = 1;  //water is empty
       //Serial.println("something wrong ");
     }
-    else if(feed_fish){
+    else if(!fishFed){
       something_wrong = 2;
      //Serial.println("something wrong : feed fish");
     }
@@ -182,15 +210,21 @@ void sendData(){
     temperature_cel=1/(log(resistance/10000)/B+1/298.15)-273.15;     // calc temperature
     temperature_fer = (temperature_cel*(9/5)) + 32;
   
+      //Serial.println("connected");
     if (client.connect(to_server, 80)) {
-      client.print( "GET /data.php?");
-      client.print("light=45");
+      Serial.println("connected");
+      client.print( "GET /Input.php?");
+      client.print("tempF=");
+      client.print(temperature_fer);
       client.print("&");
-      client.print("temp=0");
+      client.print("tempC=");
+      client.print(temperature_cel);
       client.print("&");
-      client.print("level=1");
+      client.print("waterLevel=");
+      client.print(water_full);
       client.print("&");
-      client.print("lastfed=20");
+      client.print("fishFed=");
+      client.print(fishFed);
       client.println( " HTTP/1.1");
       client.print( "Host: " );
       client.println( to_server );
@@ -201,32 +235,21 @@ void sendData(){
       client.stop();
   }
 }
-
-
-char from_server[] = "http://hgaquaponics.azurewebsites.net/boolFishFed.txt";    // name address for Google (using DNS)
-
+/*
 void recieveData(){
-  for(int i = 0; i<NUMDATA; i = i +1){
     int temp = 0;
-    if (client.connect(from_server, 80)) {
-      
-      char c = client.read();
-      Serial.println(c);
-      int d = c - 48;
-
-      // If it isn't a new line, add the character to the buffer
-      if (c != '\n' && c != '\r') {
-          temp+= temp*10 +d;
-          // Continue to read more data!
-          continue;
-      }
-
-      // Got a \n or \r new line, which means the string is done.
-      data[i] = temp;
-      Serial.println(temp);
+     if (client2.available()) {
+        char c = client2.read();
+        
+        Serial.write(c);
+    }
+    if (!client2.available() && !client2.connected())
+  {
+    Serial.println();
+    Serial.println("disconnecting.");
+    client2.stop();
   }
-  }
-}
+}*/
 
 unsigned char ledon = 0;
 
@@ -247,6 +270,9 @@ int fullcnt = 0;
 
 void loop() {
   
+  
+  http.get(from_server, "/fishFed.txt");
+  http.skipResponseHeaders(); 
   //read sensors //set to array var
   if(digitalRead(5)){
     fullcnt = 0;
@@ -260,7 +286,13 @@ void loop() {
     fullcnt = fullcnt + 1;
   
   sendData();
-  recieveData();
+  //recieveData();
+  //if(http.available()){
+  char c = http.read();
+  fishFed = c - 48;
+  Serial.print(c);
+  http.stop();
+  //}
     displayErrorMsg();
   if(ledcnt >= 5){
     displayErrorLight();
